@@ -5,8 +5,6 @@ bool bAltPause = 0;
 
 int bAlwaysDrawFrames = 0;
 
-static bool bShowFPS = false;
-
 int counter;								// General purpose variable used when debugging
 int nExitEmulator = 0;
 
@@ -19,6 +17,11 @@ static int nFastSpeed = 6;
 
 int SaveNVRAM();
 int ReadNVRAM();
+
+//crappy message system
+void UpdateMessage(char* message)
+{
+}
 
 // define this function somewhere above RunMessageLoop()
 void ToggleLayer(unsigned char thisLayer)
