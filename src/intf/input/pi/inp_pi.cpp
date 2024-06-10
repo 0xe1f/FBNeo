@@ -231,6 +231,16 @@ static int piInputState(int nCode)
 	return 0;
 }
 
+static int piReadJoyAxis(int i, int axis)
+{
+	return 0;
+}
+
+static int piReadMouseAxis(int i, int axis)
+{
+	return 0;
+}
+
 // Check a subcode (the 80xx bit in 8001, 8102 etc) for a mouse input code
 static int checkMouseState(unsigned int nSubCode)
 {
@@ -547,4 +557,4 @@ static const char * vendor_product_id(uint16_t index)
     return idstring;
 }
 
-struct InputInOut InputInOutSDL = { piInputInit, piInputExit, NULL, piInputStart, piInputState, NULL, NULL, NULL, NULL, NULL, _T("Raspberry Pi input") };
+struct InputInOut InputInOutSDL = { piInputInit, piInputExit, NULL, piInputStart, piInputState, piReadJoyAxis, piReadMouseAxis, NULL, NULL, NULL, _T("Raspberry Pi input") };
