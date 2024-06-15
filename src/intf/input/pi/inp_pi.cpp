@@ -233,11 +233,31 @@ static int piInputState(int nCode)
 
 static int piReadJoyAxis(int i, int axis)
 {
-	return 0;
+	if (i < 0 || i >= nJoystickCount) {
+		return 0;
+	}
+
+	scanJoysticks();
+	if (axis >= SDL_JoystickNumAxes(JoyList[i])) {
+		return 0;
+	}
+
+	return SDL_JoystickGetAxis(JoyList[i], axis) << 1;
 }
 
 static int piReadMouseAxis(int i, int axis)
 {
+	if (i < 0 || i >= 1) {
+		return 0;
+	}
+
+	switch (axis) {
+	case 0:
+		return mouseState.xdelta;
+	case 1:
+		return mouseState.ydelta;
+	}
+
 	return 0;
 }
 

@@ -10,11 +10,19 @@
 
 #define SCALE_MODE_NONE            0
 #define SCALE_MODE_SHORTESTXASPECT 1
+#define SCALE_MODE_FIT             2
 
+#define SCALE_ALGO_AVERAGE 0
+#define SCALE_ALGO_SAMPLE  1
+
+// TODO: can this be improved?
 #define RED(c) ((((c)>>11)&0x1f)*255/31)
 #define GREEN(c) ((((c)>>5)&0x3f)*255/63)
 #define BLUE(c) (((c)&0x1f)*255/31)
 #define RGB(r,g,b) ((((r)&0xff)>>3)<<11)|((((g)&0xff)>>2)<<5)|(((b)&0xff)>>3)
+
+#define MIN(a, b) ((a)<(b)?(a):(b))
+#define MAX(a, b) ((a)>(b)?(b):(a))
 
 static int renderBufferSize;
 static int renderBufferWidth;
@@ -34,6 +42,7 @@ static unsigned char *outputBuffer = NULL;
 static int landscapeWidth = 0;
 static int landscapeHeight = 0;
 static int scaleMode = SCALE_MODE_NONE;
+static int scaleAlgo = SCALE_ALGO_AVERAGE;
 
 static int screenRotated = 0;
 static int screenFlipped = 0;
@@ -98,29 +107,21 @@ static int resetBuffers()
 
 static void initOutputBuffer()
 {
-    if (!screenRotated) {
+    if (scaleMode == SCALE_MODE_SHORTESTXASPECT) {
         if (renderBufferWidth > landscapeWidth) {
-            if (scaleMode == SCALE_MODE_SHORTESTXASPECT) {
-                outputBufferWidth = (int)(renderBufferHeight * ((float) aspectX / aspectY));
-                outputBufferHeight = renderBufferHeight;
-            }
+            outputBufferWidth = (int)(renderBufferHeight * ((float) aspectX / aspectY));
+            outputBufferHeight = renderBufferHeight;
         } else if (renderBufferHeight > landscapeHeight) {
-            if (scaleMode == SCALE_MODE_SHORTESTXASPECT) {
-                outputBufferWidth = renderBufferWidth;
-                outputBufferHeight = (int)(renderBufferWidth * ((float) aspectY / aspectX));
-            }
+            outputBufferWidth = renderBufferWidth;
+            outputBufferHeight = (int)(renderBufferWidth * ((float) aspectY / aspectX));
         }
-    } else {
-        if (renderBufferHeight > landscapeWidth) {
-            if (scaleMode == SCALE_MODE_SHORTESTXASPECT) {
-                outputBufferWidth = renderBufferWidth;
-                outputBufferHeight = (int)(renderBufferWidth * ((float) aspectY / aspectX));
-            }
-        } else if (renderBufferWidth > landscapeHeight) {
-            if (scaleMode == SCALE_MODE_SHORTESTXASPECT) {
-                outputBufferWidth = (int)(renderBufferHeight * ((float) aspectX / aspectY));
-                outputBufferHeight = renderBufferHeight;
-            }
+    } else if (scaleMode == SCALE_MODE_FIT) {
+        if (screenRotated) {
+            outputBufferHeight = landscapeWidth;
+            outputBufferWidth = (int)(landscapeWidth * ((float) aspectX / aspectY));
+        } else {
+            outputBufferWidth = landscapeWidth;
+            outputBufferHeight = (int)(landscapeWidth * ((float) aspectX / aspectY));
         }
     }
 
@@ -167,11 +168,30 @@ static int parseScaleMode(const char *arg)
     if (strcmp(arg, "shortestxaspect") == 0) {
         scaleMode = SCALE_MODE_SHORTESTXASPECT;
         fprintf(stderr, "scaling mode: SCALE_MODE_SHORTESTXASPECT\n");
+    } else if (strcmp(arg, "fit") == 0) {
+        scaleMode = SCALE_MODE_FIT;
+        fprintf(stderr, "scaling mode: FIT\n");
     } else if (strcmp(arg, "none") == 0) {
         scaleMode = SCALE_MODE_NONE;
         fprintf(stderr, "scaling mode: SCALE_MODE_NONE\n");
     } else {
         fprintf(stderr, "warning: unrecognized scaling mode: %s\n", arg);
+        return 0;
+    }
+
+    return 1;
+}
+
+static int parseScaleAlgo(const char *arg)
+{
+    if (strcmp(arg, "average") == 0) {
+        scaleAlgo = SCALE_ALGO_AVERAGE;
+        fprintf(stderr, "scaling algorithm: AVERAGE\n");
+    } else if (strcmp(arg, "sample") == 0) {
+        scaleAlgo = SCALE_ALGO_SAMPLE;
+        fprintf(stderr, "scaling algorithm: SAMPLE\n");
+    } else {
+        fprintf(stderr, "warning: unrecognized scaling algorithm: %s\n", arg);
         return 0;
     }
 
@@ -194,8 +214,10 @@ static int FbInit()
             show_server_fps = 1;
         } else if (strstr(arg, "--output-dims=") != NULL) {
             parseDimensions(arg + 14);
-        } else if (strstr(arg, "--scale=") != NULL) {
-            parseScaleMode(arg + 8);
+        } else if (strstr(arg, "--scale-mode=") != NULL) {
+            parseScaleMode(arg + 13);
+        } else if (strstr(arg, "--scale-algo=") != NULL) {
+            parseScaleAlgo(arg + 13);
         }
     }
 
@@ -322,35 +344,45 @@ static inline void log_fps()
 
 static void process() {
     if (
-        renderBufferWidth != outputBufferWidth
-            || renderBufferHeight != outputBufferHeight
+        renderBufferWidth == outputBufferWidth
+            && renderBufferHeight == outputBufferHeight
     ) {
-        // Based on https://www.reddit.com/r/C_Programming/comments/16j7k4d/optimizing_image_downsampling_for_speed/
-        // Assumes a 2bpp bitmap
-        unsigned short *destRow = (unsigned short *) outputBuffer;
-        unsigned short *source = (unsigned short *) renderBuffer;
-        int destWidth = (screenRotated) ? outputBufferHeight : outputBufferWidth;
-        int destHeight = (screenRotated) ? outputBufferWidth : outputBufferHeight;
-        int srcWidth = (screenRotated) ? renderBufferHeight : renderBufferWidth;
-        int srcHeight = (screenRotated) ? renderBufferWidth : renderBufferHeight;
+        fprintf(stderr, "Attempt to process identically-sized buffers\n");
+        return;
+    }
 
-        float ratioX = srcWidth / (float) (destWidth + 1);
-        float ratioY = srcHeight / (float) (destHeight + 1);
-        for (int y = 0; y < destHeight; ++y) {
-            int y1 = y * ratioY;
-            int y2 = (y + 1) * ratioY;
+    // Based on https://www.reddit.com/r/C_Programming/comments/16j7k4d/optimizing_image_downsampling_for_speed/
+    // Assumes a 2bpp bitmap
+    unsigned short *destRow = (unsigned short *) outputBuffer;
+    unsigned short *source = (unsigned short *) renderBuffer;
+    int destWidth = (screenRotated) ? outputBufferHeight : outputBufferWidth;
+    int destHeight = (screenRotated) ? outputBufferWidth : outputBufferHeight;
+    int srcWidth = (screenRotated) ? renderBufferHeight : renderBufferWidth;
+    int srcHeight = (screenRotated) ? renderBufferWidth : renderBufferHeight;
 
-            unsigned short *sourceRow = source + y1 * srcWidth;
-            unsigned short *dest = destRow;
-            for (int x = 0; x < destWidth; ++x) {
-                int x1 = x * ratioX;
-                int x2 = (x + 1) * ratioX;
+    float ratioX = srcWidth / (float) (destWidth + 1);
+    float ratioY = srcHeight / (float) (destHeight + 1);
+    for (int y = 0; y < destHeight; ++y) {
+        int y1 = y * ratioY;
+        int y2 = (y + 1) * ratioY;
 
-                unsigned int r = 0;
-                unsigned int g = 0;
-                unsigned int b = 0;
+        unsigned short *sourceRow = source + y1 * srcWidth;
+        unsigned short *dest = destRow;
+        for (int x = 0; x < destWidth; ++x) {
+            int x1 = x * ratioX;
+            int x2 = (x + 1) * ratioX;
 
-                unsigned short *pixels = sourceRow;
+            unsigned int r = 0;
+            unsigned int g = 0;
+            unsigned int b = 0;
+            unsigned short *pixels = sourceRow;
+
+            if (scaleAlgo == SCALE_ALGO_SAMPLE) {
+                unsigned short c = pixels[(x1 + x2) >> 1];
+                r += RED(c);
+                g += GREEN(c);
+                b += BLUE(c);
+            } else {
                 for (int i = y1; i < y2; ++i) {
                     for (int j = x1; j < x2; ++j) {
                         unsigned short c = pixels[j];
@@ -365,12 +397,11 @@ static void process() {
                 r /= pixelCount;
                 g /= pixelCount;
                 b /= pixelCount;
-                *dest++ = RGB(r,g,b);
             }
-            destRow += destWidth;
+
+            *dest++ = RGB(r,g,b);
         }
-    } else {
-        fprintf(stderr, "Attempt to process identically-sized buffers\n");
+        destRow += destWidth;
     }
 }
 
