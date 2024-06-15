@@ -8,6 +8,8 @@
 #include "burner.h"
 #include "rgbserver.h"
 
+#define COLORS_FLOAT
+
 #define SCALE_MODE_NONE            0
 #define SCALE_MODE_SHORTESTXASPECT 1
 #define SCALE_MODE_FIT             2
@@ -15,10 +17,15 @@
 #define SCALE_ALGO_AVERAGE 0
 #define SCALE_ALGO_SAMPLE  1
 
-// TODO: can this be improved?
+#ifdef COLORS_FLOAT
+#define RED(c) (int)((((c)>>11)&0x1f)*(255.0f/31))
+#define GREEN(c) (int)((((c)>>5)&0x3f)*(255.0f/63))
+#define BLUE(c) (int)(((c)&0x1f)*(255.0f/31))
+#else
 #define RED(c) ((((c)>>11)&0x1f)*255/31)
 #define GREEN(c) ((((c)>>5)&0x3f)*255/63)
 #define BLUE(c) (((c)&0x1f)*255/31)
+#endif
 #define RGB(r,g,b) ((((r)&0xff)>>3)<<11)|((((g)&0xff)>>2)<<5)|(((b)&0xff)>>3)
 
 #define MIN(a, b) ((a)<(b)?(a):(b))
@@ -108,10 +115,16 @@ static int resetBuffers()
 static void initOutputBuffer()
 {
     if (scaleMode == SCALE_MODE_SHORTESTXASPECT) {
-        if (renderBufferWidth > landscapeWidth) {
+        if (
+            (renderBufferWidth > landscapeWidth && !screenRotated)
+            || (renderBufferWidth > landscapeHeight && screenRotated)
+         ) {
             outputBufferWidth = (int)(renderBufferHeight * ((float) aspectX / aspectY));
             outputBufferHeight = renderBufferHeight;
-        } else if (renderBufferHeight > landscapeHeight) {
+        } else if (
+            (renderBufferHeight > landscapeHeight && !screenRotated)
+            || (renderBufferHeight > landscapeWidth && screenRotated)
+        ) {
             outputBufferWidth = renderBufferWidth;
             outputBufferHeight = (int)(renderBufferWidth * ((float) aspectY / aspectX));
         }
@@ -121,7 +134,7 @@ static void initOutputBuffer()
             outputBufferWidth = (int)(landscapeWidth * ((float) aspectX / aspectY));
         } else {
             outputBufferWidth = landscapeWidth;
-            outputBufferHeight = (int)(landscapeWidth * ((float) aspectX / aspectY));
+            outputBufferHeight = (int)(landscapeWidth * ((float) aspectY / aspectX));
         }
     }
 
