@@ -10,6 +10,7 @@ int nAppVirtualFps = 6000;			// App fps * 100
 bool bRunPause = 0;
 bool bAlwaysProcessKeyboardInput=0;
 TCHAR szAppBurnVer[16];
+int runInBackground = 0;
 
 void formatBinary(int number, int sizeBytes, char *dest, int len)
 {
@@ -127,8 +128,8 @@ int setDipSwitch(int switchNo)
 int parseSwitches(int argc, char *argv[])
 {
 	int dipSwitchSet = 0;
-        for (int i = 1; i < argc; i++) {
-                if (*argv[i] != '-') {
+	for (int i = 1; i < argc; i++) {
+		if (*argv[i] != '-') {
 			continue;
 		}
 
@@ -143,6 +144,8 @@ int parseSwitches(int argc, char *argv[])
 			printf("Freeplay hack enabled\n");
 		} else if (strcmp(argv[i] + 1, "dumpswitches") == 0) {
 			dumpDipSwitches();
+		} else if (strcmp(argv[i] + 1, "background") == 0) {
+			runInBackground = 1;
 		} else if (strncmp(argv[i] + 1, "ds=", 3) == 0) {
 			char format[16];
 			strncpy(format, argv[i] + 4, sizeof(format) - 1);
@@ -231,15 +234,31 @@ int main(int argc, char *argv[])
 	}
 
 	bCheatsAllowed = false;
+	EnableHiscores = 1;
 
 	if (DrvInit(driverId, 0) != 0) {
 		fprintf(stderr, "Driver init failed\n");
-		return 0;
+		return 1;
 	}
 
 	parseSwitches(argc, argv);
-	signal(SIGINT, sigintHandler);
-	RunMessageLoop();
+
+	if (runInBackground) {
+		pid_t pid = fork();
+		if (pid < 0) {
+			fprintf(stderr, "fork() failed\n");
+		} else if (pid == 0) {
+			// Child; keep going
+			runInBackground = 0;
+		} else {
+			fprintf(stderr, "Continuing in background as pid %d\n", pid);
+		}
+	}
+
+	if (!runInBackground) {
+		signal(SIGINT, sigintHandler);
+		RunMessageLoop();
+	}
 
 	DrvExit();
 	MediaExit();
