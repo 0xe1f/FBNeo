@@ -1,4 +1,5 @@
 #include "burner.h"
+#include <fcntl.h>
 #include <signal.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -145,6 +146,7 @@ int parseSwitches(int argc, char *argv[])
 		} else if (strcmp(argv[i] + 1, "dumpswitches") == 0) {
 			dumpDipSwitches();
 		} else if (strcmp(argv[i] + 1, "background") == 0) {
+			fprintf(stderr, "Background execution enabled\n");
 			runInBackground = 1;
 		} else if (strncmp(argv[i] + 1, "ds=", 3) == 0) {
 			char format[16];
@@ -250,6 +252,9 @@ int main(int argc, char *argv[])
 		} else if (pid == 0) {
 			// Child; keep going
 			runInBackground = 0;
+			int dev_null_fd = open("/dev/null", O_WRONLY);
+			dup2(dev_null_fd, 1);
+			dup2(dev_null_fd, 2);
 		} else {
 			fprintf(stderr, "Continuing in background as pid %d\n", pid);
 		}
